@@ -152,7 +152,7 @@ class DenseQRNNLayers:
             inputs = tf.concat([inputs, outputs], 3)
         return tf.squeeze(outputs[:, :, :, -1])
 
-class DenseQRNNModel(SentimentModel):
+class DenseQRNNModel(Model):
     def forward(self):
         inputs = self.inputs
 
