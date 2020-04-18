@@ -31,11 +31,9 @@ def init_embeddings(embeds, vocab, dim):
     for i in range(3):
         var = tf.Variable(tf.contrib.layers.xavier_initializer()(shape=[dim]), dtype=tf.float32)
         embed_list.append(var)
-    for _id, word in vocab_dict.items():
-        if int(_id) in embeds.keys():
-            embed_list.append(tf.constant(embeds[_id], dtype=tf.float32))
-        else:
-            embed_list.append(embed_list[2])
+    for _id, word in vocab.items():
+        if int(_id) in embeds.keys(): embed_list.append(tf.constant(embeds[_id], dtype=tf.float32))
+        else: embed_list.append(embed_list[2])
     return tf.stack(embed_list, axis=0)
 
 
@@ -79,10 +77,3 @@ def get_datasets(batch_size=100, num_words=1000, seq_len=100):
     dev = imdbDataset((test[0][0:n_2], test[1][0:n_2]), seq_len=seq_len)
     test = imdbDataset((test[0][n_2:], test[1][n_2:]), seq_len=seq_len)
     return (DataLoader(train, batch_size), DataLoader(test, batch_size),vocab)
-
-
-def convert_to_np(x):
-    if type(x[0]) == int:
-        return x.numpy()
-    else:
-        return np.array([x_i.numpy() for x_i in x]).T
