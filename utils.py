@@ -7,26 +7,36 @@ import tensorflow as tf
 from keras.datasets import imdb
 from torch.utils.data import Dataset, DataLoader
 
-def get_embeddings(vocab_dict, path, dim=300):
-    vocab_dict = {word: int(_id) for _id, word in vocab_dict.items()}
+def check_restore_parameters(sess, saver, checkpoint_path):
+    try:
+        os.mkdir(checkpoint_path)
+    except OSError:
+        pass
+
+    ckpt = tf.train.get_checkpoint_state(checkpoint_path)
+    if ckpt and ckpt.model_checkpoint_path:
+        print ("Loading parameters")
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    else:
+        print ("Initializing fresh parameters")
+
+def get_embeddings(vocab, path, dim = 300):
+    vocab_dict = {word: int(_id) for _id, word in vocab.items()}
     embed_id = path.split('.')[-2]
     if embed_id+'_imdb.json' not in os.listdir('.'):
         embeds = {}
         with open(path, encoding="utf8") as f:
             for line in f:
                 split = line.split()
-                word = split[0]
+                word = split[0].encode('utf-8').lower()
                 vec = split[1:]
                 if word in vocab_dict.keys():
-                    embeds[vocab_dict[word]] = map(float,vec)
+                    embeds[vocab_dict[word]] = list(map(float,vec))
         with open(embed_id+'_imdb.json', 'w') as f:
             f.write(json.dumps(embeds))
     else:
         with open(embed_id+'_imdb.json') as f:
             embeds = {int(_id): word for _id, word in json.loads(f.read()).items()}
-    return embeds
-#
-def init_embeddings(embeds, vocab, dim):
     embed_list = []
     for i in range(3):
         var = tf.Variable(tf.contrib.layers.xavier_initializer()(shape=[dim]), dtype=tf.float32)
@@ -35,7 +45,6 @@ def init_embeddings(embeds, vocab, dim):
         if int(_id) in embeds.keys(): embed_list.append(tf.constant(embeds[_id], dtype=tf.float32))
         else: embed_list.append(embed_list[2])
     return tf.stack(embed_list, axis=0)
-
 
 class imdbDataset(Dataset):
     def __init__(self, dataset, seq_len=100):
@@ -72,8 +81,5 @@ def get_datasets(batch_size=100, num_words=1000, seq_len=100):
     vocab = imdb.get_word_index()
     vocab = {int(_id): word.encode('utf-8').lower() for word, _id in vocab.items() if _id <= num_words}
     train = imdbDataset(train, seq_len=seq_len)
-    n = len(test[0])
-    n_2 = int(n/2)
-    dev = imdbDataset((test[0][0:n_2], test[1][0:n_2]), seq_len=seq_len)
-    test = imdbDataset((test[0][n_2:], test[1][n_2:]), seq_len=seq_len)
+    test = imdbDataset((test[0], test[1]), seq_len=seq_len)
     return (DataLoader(train, batch_size), DataLoader(test, batch_size),vocab)

@@ -2,11 +2,11 @@ import tensorflow as tf
 
 
 class SentimentModel:
-    def __init__(self, embeddings, BATCH_SIZE, SEQ_LEN, VOCAB_SIZE, beta=4e-6):
+    def __init__(self, embeddings, BATCH_SIZE, SEQ_LEN, train, beta=4e-6):
         self.batch_size = BATCH_SIZE
         self.seq_len = SEQ_LEN
-        self.vocab_size = VOCAB_SIZE
         self.embeddings = embeddings
+        self.train = train
 
         self.inputs = tf.placeholder(tf.int32, [BATCH_SIZE, SEQ_LEN], name="inputs")
         self.masks = tf.placeholder(tf.float32, [BATCH_SIZE, SEQ_LEN], name="mask")
@@ -31,7 +31,6 @@ class SentimentModel:
         
         return loss
 
-
 class DenseQRNNModel(SentimentModel):
     def forward(self):
         inputs = self.inputs
@@ -42,7 +41,7 @@ class DenseQRNNModel(SentimentModel):
         conv_size = 50
         x = tf.expand_dims(tf.nn.embedding_lookup(self.embeddings, inputs), -1)
         qrnn = DenseQRNNLayers(input_size,conv_size,num_convs,range(num_layers),num_layers, dropout=0.3)
-        x = qrnn(x)#, train=self.train)
+        x = qrnn(x, train=self.train)
         weights = [l.W for l in qrnn.layers] + [l.b for l in qrnn.layers]
         return tf.squeeze(x), weights
 
@@ -63,11 +62,11 @@ class QRNNLayer:
             self.W = tf.get_variable('W', filter_shape, initializer=init, dtype=tf.float32)
             self.b = tf.get_variable('b', [hidden_size*(len(pool)+1)], initializer=init, dtype=tf.float32)
 
-    def __call__(self, inputs):
+    def __call__(self, inputs, train):
         gates = self.conv(inputs)
         if self.zoneout and self.zoneout > 0.0:
             F = gates[2]
-            F = 1-tf.nn.dropout(F, 1-self.zoneout)
+            F = 1-tf.nn.dropout(F, 1-self.zoneout) if train else F
             gates[2] = F
         if self.pool == 'f': return self.f_pool(gates)
         elif self.pool == 'fo': return self.fo_pool(gates)
@@ -107,7 +106,7 @@ class QRNNLayer:
 
     def fo_pool(self, gates):
         Z, F, O = self.unstack(gates,'fo')
-        C = [tf.fill(tf.shape(Z[0]), 0.0)]
+        C = [tf.fill(tf.shape(Z[0]), 0.0)] #tf.zeros(tf.shape(Z[0]), tf.float32) #
         H = []
         for i in range(len(Z)):
             c = tf.multiply(F[i], C[-1]) + tf.multiply(1-F[i], Z[i])
@@ -119,7 +118,7 @@ class QRNNLayer:
 
     def ifo_pool(self, gates):
         Z, F, O, I = self.unstack(gates,'ifo')
-        C = [tf.fill(tf.shape(Z[0]), 0.0)]
+        C = tf.zeros(tf.shape(Z[0]), tf.float32) #[tf.fill(tf.shape(Z[0]), 0.0)]
         H = []
         for i in range(len(Z)):
             c = tf.multiply(F[i], C[-1]) + tf.multiply(I[i], Z[i])
@@ -137,13 +136,13 @@ class DenseQRNNLayers:
         self.dropout = dropout
         self.layers = [QRNNLayer(hidden_size, conv_size, hidden_size,layer_ids[i], pool='fo', zoneout=zoneout, num_in_channels=i+1) for i in range(num_layers)]
 
-    def __call__(self, inputs):
+    def __call__(self, inputs, train):
         inputs = tf.layers.dense(tf.transpose(inputs, [0, 1, 3, 2]), self.hidden_size)
         inputs = tf.transpose(inputs, [0, 1, 3, 2])
         for layer in self.layers:
-            outputs = layer(inputs)
+            outputs = layer(inputs, train = train)
             if self.dropout and self.dropout > 0:
                 keep_prob = 1 - self.dropout
-                outputs = tf.nn.dropout(outputs, keep_prob)
+                outputs = tf.nn.dropout(outputs, keep_prob) if train else outputs
             inputs = tf.concat([inputs, outputs], 3)
         return tf.squeeze(outputs[:, :, :, -1])
